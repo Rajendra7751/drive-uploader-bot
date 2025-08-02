@@ -1,8 +1,8 @@
-pyrogram
-tgcrypto
-google-api-python-client
-google-auth
-google-auth-oauthlib
-pymongo
-python-dotenv
-requests
+pyrogram==2.0.106
+pyromod==1.5
+google-api-python-client==2.120.0
+google-auth==2.27.0
+google-auth-oauthlib==1.2.0
+pymongo==4.6.1
+python-dotenv==1.0.1
+requests==2.31.0
