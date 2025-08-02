@@ -1,10 +1,8 @@
 import os
 import time
 import requests
-import asyncio
 import tempfile
 from flask import Flask, request
-from threading import Thread
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from google_auth_oauthlib.flow import Flow
@@ -23,7 +21,7 @@ API_HASH = os.getenv("API_HASH")
 MONGO_URI = os.getenv("MONGO_URI")
 APP_URL = os.getenv("APP_URL")  # e.g. https://drive-uploader-bot.onrender.com
 
-# === Embedded OAuth Client (NO external JSON needed) ===
+# === Embedded OAuth Client ===
 OAUTH_CLIENT_DATA = {
     "web": {
         "client_id": "194324411302-fakeid.apps.googleusercontent.com",
@@ -35,7 +33,6 @@ OAUTH_CLIENT_DATA = {
         "redirect_uris": [f"{APP_URL}/oauth2callback"]
     }
 }
-# Save to temp for google library
 OAUTH_CLIENT_SECRET_FILE = "/tmp/client_secret.json"
 with open(OAUTH_CLIENT_SECRET_FILE, "w") as f:
     json.dump(OAUTH_CLIENT_DATA, f)
@@ -73,11 +70,6 @@ def oauth2callback():
     )
     bot_app.send_message(user_id, "✅ **Google Drive linked successfully!**\nNow you can use /driveit.")
     return "✅ Authorization successful! You can now return to Telegram."
-
-def run_flask():
-    flask_app.run(host="0.0.0.0", port=8080)
-
-Thread(target=run_flask).start()
 
 # === Pyrogram Bot ===
 bot_app = Client("gdrive_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
@@ -209,6 +201,3 @@ async def handle_upload(_, message: Message):
         f"🔗 [View in Drive]({link})\n"
         f"⏱ Time Taken: `{elapsed}s`"
     )
-
-# Run bot
-bot_app.run()
