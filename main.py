@@ -18,6 +18,9 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 MONGO_URI = os.getenv("MONGO_URI")
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+PROJECT_ID = os.getenv("PROJECT_ID")
 
 # === DB Setup ===
 mongo_client = pymongo.MongoClient(MONGO_URI)
@@ -42,7 +45,6 @@ def build_drive_service(creds):
     return build('drive', 'v3', credentials=creds)
 
 # === Commands ===
-
 @bot.on_message(filters.command("start") & filters.private)
 async def start(_, message: Message):
     await message.reply_text(
@@ -59,11 +61,11 @@ async def login(_, message: Message):
     flow = InstalledAppFlow.from_client_config(
         {
             "installed": {
-                "client_id": "194324411302-fakeid.apps.googleusercontent.com",
-                "project_id": "drive-uploader-bot",
+                "client_id": CLIENT_ID,
+                "project_id": PROJECT_ID,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "client_secret": "XfAkefakeSecret12345",
+                "client_secret": CLIENT_SECRET,
                 "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob"]
             }
         },
