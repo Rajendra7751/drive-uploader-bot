@@ -2,8 +2,8 @@ import os
 import time
 import tempfile
 import requests
-from pyrogram import filters
-from pyromod.listen import Client  # For interactive inputs
+from pyrogram import Client, filters
+import pyromod.listen  # Just import, don't overwrite Client
 from pyrogram.types import Message
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
