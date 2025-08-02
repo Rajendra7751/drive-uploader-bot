@@ -2,7 +2,8 @@ import os
 import time
 import tempfile
 import requests
-from pyrogram import Client, filters
+from pyrogram import filters
+from pyromod.listen import Client  # For interactive inputs
 from pyrogram.types import Message
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -18,9 +19,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 MONGO_URI = os.getenv("MONGO_URI")
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-PROJECT_ID = os.getenv("PROJECT_ID")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
 # === DB Setup ===
 mongo_client = pymongo.MongoClient(MONGO_URI)
@@ -61,11 +61,11 @@ async def login(_, message: Message):
     flow = InstalledAppFlow.from_client_config(
         {
             "installed": {
-                "client_id": CLIENT_ID,
-                "project_id": PROJECT_ID,
+                "client_id": GOOGLE_CLIENT_ID,
+                "project_id": "drive-uploader-bot",
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "client_secret": CLIENT_SECRET,
+                "client_secret": GOOGLE_CLIENT_SECRET,
                 "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob"]
             }
         },
@@ -77,7 +77,7 @@ async def login(_, message: Message):
         "2. Allow access and copy the code.\n"
         "3. Send me the code here."
     )
-    code_msg = await bot.listen(message.chat.id)
+    code_msg = await message.chat.ask("Now send me the code from Google:")
     flow.fetch_token(code=code_msg.text.strip())
     creds = flow.credentials
     tokens_collection.update_one(
@@ -156,7 +156,7 @@ async def handle_upload(_, message: Message):
         temp = local_file.name
 
     await status.edit_text("✏️ **Send me a new file name (without extension).**\nReply `no` to keep original.")
-    reply = await bot.listen(message.chat.id)
+    reply = await message.chat.ask("Send the new filename (or type 'no' to keep original):")
     if reply.text.lower() != "no":
         name, ext = os.path.splitext(orig_filename)
         new_filename = reply.text + ext
