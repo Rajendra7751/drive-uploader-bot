@@ -48,6 +48,10 @@ tokens_collection = db['tokens']
 # === Flask for OAuth Callback ===
 flask_app = Flask(__name__)
 
+@flask_app.route("/")
+def index():
+    return "Drive Uploader Bot is running!"
+
 @flask_app.route("/oauth2callback")
 def oauth2callback():
     code = request.args.get("code")
