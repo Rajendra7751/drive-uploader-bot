@@ -3,17 +3,17 @@ import time
 import tempfile
 import threading
 import requests
-from flask import Flask
+import json
+import pymongo
+from flask import Flask, request
 from pyrogram import Client, filters
 import pyromod.listen
 from pyrogram.types import Message
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 from dotenv import load_dotenv
-import pymongo
-import json
 
 # === Load ENV ===
 load_dotenv()
@@ -23,27 +23,58 @@ API_HASH = os.getenv("API_HASH")
 MONGO_URI = os.getenv("MONGO_URI")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-PORT = int(os.getenv("PORT", 8080))
+BASE_URL = os.getenv("BASE_URL")  # e.g., https://drive-uploader-bot.onrender.com
 
-# === DB Setup ===
+# === MongoDB ===
 mongo_client = pymongo.MongoClient(MONGO_URI)
 db = mongo_client['gdrive_bot']
 tokens_collection = db['tokens']
 
-# === Scopes ===
+# === Google Scopes ===
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
-# === Flask App (For Render Free Web) ===
+# === Flask App ===
 app = Flask(__name__)
-@app.route('/')
-def home():
-    return "Google Drive Bot is running!"
+
+@app.route("/")
+def index():
+    return "Drive Uploader Bot is running!"
+
+@app.route("/oauth2callback")
+def oauth2callback():
+    state = request.args.get("state")
+    code = request.args.get("code")
+    if not state or not code:
+        return "Missing state or code", 400
+    user_id = int(state)
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [f"{BASE_URL}/oauth2callback"]
+            }
+        },
+        SCOPES
+    )
+    flow.redirect_uri = f"{BASE_URL}/oauth2callback"
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    tokens_collection.update_one(
+        {"user_id": user_id},
+        {"$set": {"token": creds.to_json()}},
+        upsert=True
+    )
+    bot.send_message(user_id, "✅ **Google Drive linked successfully!**\nYou can now use /driveit.")
+    return "Google Drive linked successfully! You can close this tab."
 
 # === Pyrogram Bot ===
 bot = Client("gdrive_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 upload_count = {}
 
-# === Helper Functions ===
+# === Helpers ===
 def get_user_creds(user_id):
     token_data = tokens_collection.find_one({"user_id": user_id})
     if not token_data:
@@ -53,6 +84,13 @@ def get_user_creds(user_id):
 def build_drive_service(creds):
     return build('drive', 'v3', credentials=creds)
 
+def human_readable(size):
+    for unit in ['B','KB','MB','GB','TB']:
+        if size < 1024:
+            return f"{size:.2f} {unit}"
+        size /= 1024
+    return f"{size:.2f} TB"
+
 # === Commands ===
 @bot.on_message(filters.command("start") & filters.private)
 async def start(_, message: Message):
@@ -60,41 +98,31 @@ async def start(_, message: Message):
         "👋 **Welcome to Google Drive Uploader Bot!**\n\n"
         "Commands:\n"
         "/login - Connect your Google Drive\n"
-        "/logout - Disconnect Google Drive\n"
+        "/logout - Disconnect your Google Drive\n"
         "/driveit - Upload files or links\n"
         "/storage - View storage info"
     )
 
 @bot.on_message(filters.command("login") & filters.private)
 async def login(_, message: Message):
-    flow = InstalledAppFlow.from_client_config(
+    flow = Flow.from_client_config(
         {
-            "installed": {
+            "web": {
                 "client_id": GOOGLE_CLIENT_ID,
-                "project_id": "drive-uploader-bot",
+                "client_secret": GOOGLE_CLIENT_SECRET,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob"]
+                "redirect_uris": [f"{BASE_URL}/oauth2callback"]
             }
         },
         SCOPES
     )
-    auth_url, _ = flow.authorization_url(prompt='consent')
+    flow.redirect_uri = f"{BASE_URL}/oauth2callback"
+    auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline', state=str(message.from_user.id))
     await message.reply_text(
-        f"🔗 **Login to Google Drive**\n1. [Click here to log in]({auth_url})\n"
-        "2. Allow access and copy the code.\n"
-        "3. Send me the code here."
+        f"🔗 **Login to Google Drive**\n[Click here to log in]({auth_url})",
+        disable_web_page_preview=True
     )
-    code_msg = await message.chat.ask("Now send me the code from Google:")
-    flow.fetch_token(code=code_msg.text.strip())
-    creds = flow.credentials
-    tokens_collection.update_one(
-        {"user_id": message.from_user.id},
-        {"$set": {"token": creds.to_json()}},
-        upsert=True
-    )
-    await message.reply_text("✅ **Google Drive linked successfully!**\nNow you can use /driveit.")
 
 @bot.on_message(filters.command("logout") & filters.private)
 async def logout(_, message: Message):
@@ -112,15 +140,8 @@ async def storage(_, message: Message):
     total = int(about['storageQuota']['limit'])
     used = int(about['storageQuota']['usage'])
     free = total - used
-
-    def human_readable(size):
-        for unit in ['B','KB','MB','GB','TB']:
-            if size < 1024:
-                return f"{size:.2f} {unit}"
-            size /= 1024
-        return f"{size:.2f} TB"
-
     count = upload_count.get(message.from_user.id, 0)
+
     await message.reply_text(
         f"📊 **Google Drive Storage:**\n"
         f"Total: `{human_readable(total)}`\n"
@@ -192,9 +213,9 @@ async def handle_upload(_, message: Message):
         f"⏱ Time Taken: `{elapsed}s`"
     )
 
-# === Run Both Flask + Bot ===
+# === Run Flask + Bot ===
 def run_flask():
-    app.run(host="0.0.0.0", port=PORT)
+    app.run(host="0.0.0.0", port=8080)
 
 threading.Thread(target=run_flask).start()
 bot.run()
